@@ -130,29 +130,62 @@ if [[ $missing_files -eq 1 ]]; then
     exit 1
 fi
 
-# Create progress.txt if it doesn't exist
-if [[ ! -f "$PROGRESS_FILE" ]]; then
-    echo -e "${YELLOW}Creating $PROGRESS_FILE from $FEATURES_FILE...${NC}"
-    
-    # Parse features.json without jq - uses grep and sed
-    # Extracts "name": "value" patterns
+# Create or sync progress.txt with features.json
+sync_progress_file() {
+    # Extract feature names from features.json
+    local temp_features=$(mktemp)
     grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$FEATURES_FILE" 2>/dev/null | \
-        sed 's/"name"[[:space:]]*:[[:space:]]*"/[ ] /; s/"$//' > "$PROGRESS_FILE"
+        sed 's/"name"[[:space:]]*:[[:space:]]*"//; s/"$//' > "$temp_features"
     
     # If no "name" fields found, try "title" fields
-    if [[ ! -s "$PROGRESS_FILE" ]]; then
+    if [[ ! -s "$temp_features" ]]; then
         grep -o '"title"[[:space:]]*:[[:space:]]*"[^"]*"' "$FEATURES_FILE" 2>/dev/null | \
-            sed 's/"title"[[:space:]]*:[[:space:]]*"/[ ] /; s/"$//' > "$PROGRESS_FILE"
+            sed 's/"title"[[:space:]]*:[[:space:]]*"//; s/"$//' > "$temp_features"
     fi
     
-    # If still empty, create placeholder
-    if [[ ! -s "$PROGRESS_FILE" ]]; then
+    # If still empty, warn and exit function
+    if [[ ! -s "$temp_features" ]]; then
         echo -e "${YELLOW}Could not parse $FEATURES_FILE automatically${NC}"
-        echo "[ ] Task 1 - Check features.json and update this file manually" > "$PROGRESS_FILE"
+        rm "$temp_features"
+        return
     fi
     
-    echo -e "${GREEN}Created $PROGRESS_FILE${NC}"
-fi
+    # If progress.txt doesn't exist, create it fresh
+    if [[ ! -f "$PROGRESS_FILE" ]]; then
+        echo -e "${YELLOW}Creating $PROGRESS_FILE from $FEATURES_FILE...${NC}"
+        while IFS= read -r feature; do
+            echo "[ ] $feature"
+        done < "$temp_features" > "$PROGRESS_FILE"
+        echo -e "${GREEN}Created $PROGRESS_FILE${NC}"
+        rm "$temp_features"
+        return
+    fi
+    
+    # progress.txt exists - sync new features
+    echo -e "${YELLOW}Syncing $PROGRESS_FILE with $FEATURES_FILE...${NC}"
+    
+    local added=0
+    while IFS= read -r feature; do
+        # Check if feature already exists in progress.txt (either [ ] or [x])
+        if ! grep -qF "$feature" "$PROGRESS_FILE" 2>/dev/null; then
+            # Feature not found, append it
+            echo "[ ] $feature" >> "$PROGRESS_FILE"
+            echo -e "${GREEN}Added new feature: $feature${NC}"
+            ((added++))
+        fi
+    done < "$temp_features"
+    
+    if [[ $added -eq 0 ]]; then
+        echo -e "${GREEN}$PROGRESS_FILE is up to date${NC}"
+    else
+        echo -e "${GREEN}Added $added new feature(s) to $PROGRESS_FILE${NC}"
+    fi
+    
+    rm "$temp_features"
+}
+
+# Run sync
+sync_progress_file
 
 echo ""
 echo "Starting loop with max $MAX_ITERATIONS iterations..."
