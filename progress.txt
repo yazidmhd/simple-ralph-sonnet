@@ -1,0 +1,6 @@
+# Progress Tracker
+# [x] = Complete | [ ] = Incomplete
+
+[ ] User Authentication
+[ ] Dashboard View
+[ ] API Integration

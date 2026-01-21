@@ -1,0 +1,32 @@
+{
+  "project": "Example Project",
+  "features": [
+    {
+      "name": "User Authentication",
+      "notes": [
+        "Use Angular reactive forms",
+        "Follow existing auth.service.ts pattern",
+        "Store token in localStorage",
+        "Handle token expiry gracefully"
+      ]
+    },
+    {
+      "name": "Dashboard View",
+      "notes": [
+        "Use CSS grid for layout",
+        "Follow card.component.ts pattern",
+        "Lazy load the widgets",
+        "Add loading skeleton states"
+      ]
+    },
+    {
+      "name": "API Integration",
+      "notes": [
+        "Use HttpClient from @angular/common/http",
+        "Add retry logic with RxJS retry operator",
+        "Follow existing interceptor pattern",
+        "Log errors to console with context"
+      ]
+    }
+  ]
+}
