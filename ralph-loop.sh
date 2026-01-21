@@ -4,10 +4,11 @@
 # External loop control to handle Sonnet's tendency to exit early
 
 # Configuration
-MAX_ITERATIONS=5
+MAX_ITERATIONS=10
 TIMEOUT_SECONDS=300
 SLEEP_BETWEEN=5
-LOG_FILE="ralph-loop.log"
+LOG_DIR="loop-logs"
+LOG_FILE="$LOG_DIR/ralph-loop-$(date +%Y%m%d-%H%M%S).log"
 
 # Files
 PRD_FILE="prd.md"
@@ -19,6 +20,12 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Create log directory if it doesn't exist
+if [[ ! -d "$LOG_DIR" ]]; then
+    mkdir -p "$LOG_DIR"
+    echo -e "${GREEN}Created log directory: $LOG_DIR${NC}"
+fi
 
 # Initialize log
 echo "=== Ralph Loop Started: $(date) ===" > "$LOG_FILE"
