@@ -4,7 +4,7 @@
 # External loop control to handle Sonnet's tendency to exit early
 
 # Configuration
-MAX_ITERATIONS=50
+MAX_ITERATIONS=5
 TIMEOUT_SECONDS=300
 SLEEP_BETWEEN=5
 LOG_FILE="ralph-loop.log"
@@ -30,8 +30,14 @@ check_completion() {
         return
     fi
     
-    # Count incomplete tasks (lines with [ ] or - [ ])
-    incomplete=$(grep -c '\[ \]' "$PROGRESS_FILE" 2>/dev/null || echo "0")
+    # Count incomplete tasks (lines with [ ])
+    # Use tr to remove any whitespace/newlines from grep output
+    incomplete=$(grep -c '\[ \]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    
+    # Default to 0 if empty
+    if [[ -z "$incomplete" ]]; then
+        incomplete=0
+    fi
     
     if [[ "$incomplete" -eq 0 ]]; then
         echo "true"
@@ -47,8 +53,14 @@ get_progress() {
         return
     fi
     
-    total=$(grep -c '\[' "$PROGRESS_FILE" 2>/dev/null || echo "0")
-    done=$(grep -c '\[x\]' "$PROGRESS_FILE" 2>/dev/null || echo "0")
+    # Use tr to clean grep output
+    total=$(grep -c '\[' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    done=$(grep -c '\[x\]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    
+    # Default to 0 if empty
+    [[ -z "$total" ]] && total=0
+    [[ -z "$done" ]] && done=0
+    
     echo "$done/$total"
 }
 
