@@ -112,7 +112,7 @@ INSTRUCTIONS - READ CAREFULLY:
    - Example (Spring Boot): ./mvnw test -Dtest=AuthServiceTest
    - VERIFY TEST RESULTS:
      * You MUST run the test command and check the output
-     * Look for "0 failures" or "Tests passed" in output
+     * Look for '0 failures' or 'Tests passed' in output
      * If ANY test fails, fix it before marking [x]
      * Do NOT assume tests pass - actually run and verify
    - Only mark [x] if ALL tests in the file pass with 0 failures
