@@ -11,8 +11,8 @@ Brief description of what this project aims to accomplish.
 ---
 
 ## Tech Stack
-- Angular 11
-- Spring Boot (backend)
+- Angular 11 (Frontend)
+- Spring Boot (Backend)
 - MariaDB
 
 ---
@@ -27,12 +27,33 @@ Brief description of what this project aims to accomplish.
 
 ---
 
+## Test Commands
+
+### Angular (Frontend)
+- Run all tests: `ng test --browsers=ChromeHeadless --watch=false`
+- Run single file: `ng test --include=**/filename.spec.ts --browsers=ChromeHeadless --watch=false`
+- Run with coverage: `ng test --code-coverage --browsers=ChromeHeadless --watch=false`
+
+### Spring Boot (Backend)
+- Run all tests: `./mvnw test`
+- Run single test class: `./mvnw test -Dtest=TestClassName`
+- Run single test method: `./mvnw test -Dtest=TestClassName#testMethodName`
+
+---
+
 ## Instructions for Claude
 
 When implementing features:
-1. Read `features.json` for the feature list, names, and notes
+1. Read `features.json` for the feature list, names, type, and notes
 2. Read this PRD for project context and conventions
 3. Check `progress.txt` for current status
 4. Implement ONE feature at a time
 5. Follow the notes in `features.json` for that specific feature
-6. Update `progress.txt` after completing each feature
+6. Check the `type` field in `features.json`:
+   - `implementation`: Just implement, no test verification needed
+   - `bugfix`: Fix the bug AND verify unit tests pass
+   - `testing`: Write/fix tests AND verify they pass
+7. For tests, use the appropriate command based on file type:
+   - `.ts` files → use Angular test commands
+   - `.java` files → use Spring Boot test commands
+8. Update `progress.txt` after completing each feature

@@ -97,16 +97,35 @@ INSTRUCTIONS - READ CAREFULLY:
    - Check $FEATURES_FILE for their priority (lower number = higher priority)
    - Pick the task with the lowest priority number
    - If multiple tasks have the same priority, pick any one
-3. Check if this feature is ALREADY IMPLEMENTED in the codebase
-4. If ALREADY IMPLEMENTED: verify it meets requirements. If yes, mark it [x] in $PROGRESS_FILE and say 'ALREADY_IMPLEMENTED: <feature name>'. Do NOT reimplement.
-5. If NOT IMPLEMENTED: implement the feature following the notes in $FEATURES_FILE
-6. After implementing, update $PROGRESS_FILE: change [ ] to [x] for the completed task
-7. STOP after completing ONE task - do not continue to the next
+3. Check the 'type' field in $FEATURES_FILE for this task:
+   - 'implementation': Just implement the feature. No test verification needed.
+   - 'bugfix': Fix the bug AND run unit tests to verify the fix.
+   - 'testing': Write or fix the unit tests AND verify they pass.
+   - If no type specified, treat as 'implementation'.
+4. Check if this feature is ALREADY IMPLEMENTED/FIXED in the codebase
+5. If ALREADY DONE: verify it works (and tests pass if bugfix/unittest). If yes, mark it [x] in $PROGRESS_FILE and say 'ALREADY_DONE: <feature name>'. Do NOT redo.
+6. If NOT DONE: implement/fix following the notes in $FEATURES_FILE
+7. For 'bugfix' and 'testing' types:
+   - Run tests ONLY on the specific file you modified (not all tests)
+   - Use the test command pattern from $PRD_FILE with the specific file path
+   - Example (Angular): ng test --include=**/auth.service.spec.ts --browsers=ChromeHeadless --watch=false
+   - Example (Spring Boot): ./mvnw test -Dtest=AuthServiceTest
+   - Only mark [x] if the specific file's tests pass
+8. CLEANUP before marking complete:
+   - Delete any temporary files you created (test outputs, logs, debug files)
+   - Remove any console.log or debug statements you added
+   - Do NOT delete actual source code or test files
+   - Leave the codebase clean and production-ready
+9. After completing, update $PROGRESS_FILE: change [ ] to [x] for the completed task
+10. STOP after completing ONE task - do not continue to the next
 
 IMPORTANT:
 - Do ONE task only, then stop
 - Always pick the highest priority (lowest number) incomplete task
-- Do NOT reimplement existing features
+- For bugfix/testing: run tests ONLY on the affected file, not all tests
+- For bugfix/testing: tests MUST pass before marking [x]
+- CLEANUP: Delete temp files, logs, debug code before marking complete
+- Do NOT redo existing work
 - Update $PROGRESS_FILE before stopping
 - If no [ ] tasks remain, say 'ALL_TASKS_COMPLETE'
 
