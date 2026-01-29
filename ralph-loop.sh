@@ -4,8 +4,7 @@
 # External loop control to handle Sonnet's tendency to exit early
 
 # Configuration
-MAX_ITERATIONS=10
-TIMEOUT_SECONDS=300
+MAX_ITERATIONS=50
 SLEEP_BETWEEN=5
 LOG_DIR="loop-logs"
 LOG_FILE="$LOG_DIR/ralph-loop-$(date +%Y%m%d-%H%M%S).log"
@@ -20,6 +19,18 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Trap Ctrl+C and other exit signals
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}=== Script interrupted ===${NC}"
+    echo "Progress saved in: $PROGRESS_FILE"
+    echo "Log saved in: $LOG_FILE"
+    echo "Run ./ralph-loop.sh again to continue"
+    echo "=== Interrupted: $(date) ===" >> "$LOG_FILE"
+    exit 130
+}
+trap cleanup SIGINT SIGTERM
 
 # Create log directory if it doesn't exist
 if [[ ! -d "$LOG_DIR" ]]; then
@@ -81,35 +92,36 @@ run_iteration() {
 
 INSTRUCTIONS - READ CAREFULLY:
 1. Read these files first: $FEATURES_FILE, $PRD_FILE, $PROGRESS_FILE
-2. Find the FIRST task in $PROGRESS_FILE that is marked [ ] (incomplete)
+2. Find the HIGHEST PRIORITY incomplete task:
+   - Look at $PROGRESS_FILE for tasks marked [ ] (incomplete)
+   - Check $FEATURES_FILE for their priority (lower number = higher priority)
+   - Pick the task with the lowest priority number
+   - If multiple tasks have the same priority, pick any one
 3. Check if this feature is ALREADY IMPLEMENTED in the codebase
-4. If ALREADY IMPLEMENTED: verify it meets acceptance criteria in $PRD_FILE. If yes, mark it [x] in $PROGRESS_FILE and say 'ALREADY_IMPLEMENTED: <feature name>'. Do NOT reimplement.
+4. If ALREADY IMPLEMENTED: verify it meets requirements. If yes, mark it [x] in $PROGRESS_FILE and say 'ALREADY_IMPLEMENTED: <feature name>'. Do NOT reimplement.
 5. If NOT IMPLEMENTED: implement the feature following the notes in $FEATURES_FILE
 6. After implementing, update $PROGRESS_FILE: change [ ] to [x] for the completed task
 7. STOP after completing ONE task - do not continue to the next
 
 IMPORTANT:
 - Do ONE task only, then stop
+- Always pick the highest priority (lowest number) incomplete task
 - Do NOT reimplement existing features
 - Update $PROGRESS_FILE before stopping
 - If no [ ] tasks remain, say 'ALL_TASKS_COMPLETE'
 
-Begin now. Read the files and handle the next incomplete task."
+Begin now. Read the files and handle the highest priority incomplete task."
 
     echo -e "${YELLOW}[Iteration $iteration]${NC} Running Claude..." | tee -a "$LOG_FILE"
     echo "Prompt: $prompt" >> "$LOG_FILE"
     echo "---" >> "$LOG_FILE"
     
-    # Run Claude with timeout
-    # Using timeout command to enforce time limit
-    timeout "$TIMEOUT_SECONDS" claude --dangerously-skip-permissions -p "$prompt" 2>&1 | tee -a "$LOG_FILE"
+    # Run Claude without timeout - let it complete naturally
+    claude --dangerously-skip-permissions -p "$prompt" 2>&1 | tee -a "$LOG_FILE"
     
     local exit_code=${PIPESTATUS[0]}
     
-    if [[ $exit_code -eq 124 ]]; then
-        echo -e "${RED}[Iteration $iteration]${NC} Timeout after ${TIMEOUT_SECONDS}s" | tee -a "$LOG_FILE"
-        return 1
-    elif [[ $exit_code -ne 0 ]]; then
+    if [[ $exit_code -ne 0 ]]; then
         echo -e "${RED}[Iteration $iteration]${NC} Claude exited with code $exit_code" | tee -a "$LOG_FILE"
         return 1
     fi
