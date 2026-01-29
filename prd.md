@@ -56,4 +56,13 @@ When implementing features:
 7. For tests, use the appropriate command based on file type:
    - `.ts` files → use Angular test commands
    - `.java` files → use Spring Boot test commands
-8. Update `progress.txt` after completing each feature
+8. For `bugfix` and `testing` types:
+   - You MUST run the test command
+   - Check output for "0 failures" or "Tests passed"
+   - If ANY test fails, fix it before marking [x]
+   - Do NOT assume tests pass - actually run and verify
+9. Cleanup before completing:
+   - Delete temp files, logs, debug files
+   - Remove console.log or debug statements
+   - Leave codebase clean
+10. Update `progress.txt` after completing each feature

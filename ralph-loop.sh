@@ -110,7 +110,12 @@ INSTRUCTIONS - READ CAREFULLY:
    - Use the test command pattern from $PRD_FILE with the specific file path
    - Example (Angular): ng test --include=**/auth.service.spec.ts --browsers=ChromeHeadless --watch=false
    - Example (Spring Boot): ./mvnw test -Dtest=AuthServiceTest
-   - Only mark [x] if the specific file's tests pass
+   - VERIFY TEST RESULTS:
+     * You MUST run the test command and check the output
+     * Look for "0 failures" or "Tests passed" in output
+     * If ANY test fails, fix it before marking [x]
+     * Do NOT assume tests pass - actually run and verify
+   - Only mark [x] if ALL tests in the file pass with 0 failures
 8. CLEANUP before marking complete:
    - Delete any temporary files you created (test outputs, logs, debug files)
    - Remove any console.log or debug statements you added
@@ -123,7 +128,8 @@ IMPORTANT:
 - Do ONE task only, then stop
 - Always pick the highest priority (lowest number) incomplete task
 - For bugfix/testing: run tests ONLY on the affected file, not all tests
-- For bugfix/testing: tests MUST pass before marking [x]
+- For bugfix/testing: actually RUN the tests and verify 0 failures in output
+- For bugfix/testing: if ANY test fails, fix it before marking [x]
 - CLEANUP: Delete temp files, logs, debug code before marking complete
 - Do NOT redo existing work
 - Update $PROGRESS_FILE before stopping
