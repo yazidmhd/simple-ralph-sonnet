@@ -3,6 +3,8 @@
   "features": [
     {
       "name": "User Authentication",
+      "priority": 1,
+      "type": "implementation",
       "notes": [
         "Use Angular reactive forms",
         "Follow existing auth.service.ts pattern",
@@ -11,7 +13,19 @@
       ]
     },
     {
+      "name": "Fix Login Validation Bug",
+      "priority": 1,
+      "type": "bugfix",
+      "notes": [
+        "Token expiry not handled correctly",
+        "Check auth.service.ts",
+        "Error appears after 30 min idle"
+      ]
+    },
+    {
       "name": "Dashboard View",
+      "priority": 2,
+      "type": "implementation",
       "notes": [
         "Use CSS grid for layout",
         "Follow card.component.ts pattern",
@@ -20,7 +34,19 @@
       ]
     },
     {
+      "name": "Auth Service Unit Tests",
+      "priority": 2,
+      "type": "testing",
+      "notes": [
+        "Cover login, logout, token refresh",
+        "Mock HTTP calls",
+        "Test error scenarios"
+      ]
+    },
+    {
       "name": "API Integration",
+      "priority": 3,
+      "type": "implementation",
       "notes": [
         "Use HttpClient from @angular/common/http",
         "Add retry logic with RxJS retry operator",
