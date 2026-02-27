@@ -5,8 +5,8 @@
 # Claude gets a focused, single-task prompt similar to direct invocation
 #
 # For bugfix/testing tasks:
-# - By default, Claude decides which tests to run based on files it modified
-# - Optional: Add "testCommand" in features.json to override with specific command
+# - Test framework is auto-detected (Maven, Gradle, Jest, etc.)
+# - Claude runs targeted tests on modified files only
 
 # Configuration
 MAX_ITERATIONS=50
@@ -47,7 +47,7 @@ fi
 echo "=== Ralph Loop V2 Started: $(date) ===" > "$LOG_FILE"
 
 # Function to check if all tasks are complete
-# Tasks marked [SKIP] are treated as "done" (not blocking completion)
+# Tasks marked [SKIP] or [SKIP2] are treated as "done" (not blocking completion)
 check_completion() {
     if [[ ! -f "$PROGRESS_FILE" ]]; then
         echo "false"
@@ -55,7 +55,7 @@ check_completion() {
     fi
 
     local incomplete
-    # Count only [ ] tasks, not [SKIP] or [x]
+    # Count only [ ] tasks, not [SKIP], [SKIP2], or [x]
     incomplete=$(grep -c '^\[ \]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
 
     if [[ -z "$incomplete" ]]; then
@@ -69,6 +69,52 @@ check_completion() {
     fi
 }
 
+# Function to handle completion — retries [SKIP] tasks once before declaring done
+# [SKIP] = first skip, eligible for retry
+# [SKIP2] = already retried, permanent skip
+handle_completion() {
+    # Check for first-time skips (not [SKIP2])
+    local first_skip_count
+    first_skip_count=$(grep -c '^\[SKIP\] ' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+
+    if [[ "$first_skip_count" -gt 0 ]]; then
+        # Revert [SKIP] back to [ ] for retry
+        local requeued=0
+        local temp_prog
+        temp_prog=$(mktemp)
+        while IFS= read -r line; do
+            if [[ "$line" == "[SKIP] "* ]]; then
+                local task_name
+                task_name=$(echo "$line" | sed 's/^\[SKIP\] //; s/ - .*//')
+                echo "[ ] $task_name"
+                retried_tasks+=("$task_name")
+                echo -e "${YELLOW}[Retry]${NC} Re-queuing skipped task: $task_name" | tee -a "$LOG_FILE"
+                ((requeued++))
+            else
+                echo "$line"
+            fi
+        done < "$PROGRESS_FILE" > "$temp_prog"
+        mv "$temp_prog" "$PROGRESS_FILE"
+
+        echo -e "${YELLOW}[Retry Pass]${NC} Re-queued $requeued skipped task(s) for a second attempt" | tee -a "$LOG_FILE"
+        return 1  # Not done yet, continue loop
+    fi
+
+    # Truly complete (no [ ] tasks, only [x] and [SKIP2])
+    local final_skipped
+    final_skipped=$(grep -c '^\[SKIP2\]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+
+    echo -e "${GREEN}=== ALL TASKS COMPLETE ===${NC}"
+    if [[ "$final_skipped" -gt 0 ]]; then
+        echo -e "${YELLOW}$final_skipped task(s) permanently skipped after retry:${NC}"
+        grep '^\[SKIP2\]' "$PROGRESS_FILE" | while IFS= read -r line; do
+            echo -e "  ${YELLOW}$line${NC}"
+        done
+    fi
+    echo "=== Completed: $(date) ===" >> "$LOG_FILE"
+    return 0
+}
+
 # Function to get current progress
 get_progress() {
     if [[ ! -f "$PROGRESS_FILE" ]]; then
@@ -77,10 +123,13 @@ get_progress() {
     fi
 
     local total done skipped
-    # Count all task lines: [ ], [x], or [SKIP]
+    # Count all task lines: [ ], [x], [SKIP], or [SKIP2]
     total=$(grep -c '^\[' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
     done=$(grep -c '^\[x\]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
-    skipped=$(grep -c '^\[SKIP\]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    local skip1 skip2
+    skip1=$(grep -c '^\[SKIP\] ' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    skip2=$(grep -c '^\[SKIP2\]' "$PROGRESS_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    skipped=$((skip1 + skip2))
 
     [[ -z "$total" ]] && total=0
     [[ -z "$done" ]] && done=0
@@ -94,37 +143,13 @@ get_progress() {
 }
 
 # Function to get incomplete tasks from progress.txt
-# Skips tasks marked with [SKIP]
+# Skips tasks marked with [SKIP], [SKIP2]
 get_incomplete_tasks() {
     if [[ ! -f "$PROGRESS_FILE" ]]; then
         return
     fi
     # Only match [ ] at start of line, excludes [SKIP] and [x]
     grep '^\[ \]' "$PROGRESS_FILE" | sed 's/^\[ \] //'
-}
-
-# Function to parse features.json and get task details
-get_task_from_features() {
-    local task_name="$1"
-
-    # Extract the feature block using awk
-    awk -v name="$task_name" '
-        BEGIN { found=0; depth=0; output="" }
-        /"name"[[:space:]]*:[[:space:]]*"/ {
-            if (index($0, "\"" name "\"") > 0) {
-                found=1
-            }
-        }
-        found && /{/ { depth++ }
-        found && /}/ {
-            depth--
-            if (depth == 0) {
-                print output $0
-                exit
-            }
-        }
-        found { output = output $0 "\n" }
-    ' "$FEATURES_FILE"
 }
 
 # Function to get all features with their priorities
@@ -157,7 +182,7 @@ get_features_by_priority() {
     ' "$FEATURES_FILE" | sort -t'|' -k1 -n
 }
 
-# Function to get task details (priority, type, notes, testCommand)
+# Function to get task details (priority, type, notes)
 get_task_details() {
     local task_name="$1"
 
@@ -171,7 +196,6 @@ get_task_details() {
             priority = "999"
             type = "implementation"
             notes = ""
-            testCommand = ""
         }
 
         # Find the feature with matching name
@@ -208,14 +232,6 @@ get_task_details() {
             if (line != "") type = line
         }
 
-        # Extract testCommand
-        found && in_feature && /"testCommand"[[:space:]]*:[[:space:]]*"/ {
-            line = $0
-            gsub(/.*"testCommand"[[:space:]]*:[[:space:]]*"/, "", line)
-            gsub(/".*/, "", line)
-            testCommand = line
-        }
-
         # Handle notes array - detect start
         found && in_feature && /"notes"[[:space:]]*:[[:space:]]*\[/ {
             in_notes = 1
@@ -246,7 +262,6 @@ get_task_details() {
             print "PRIORITY:" priority
             print "TYPE:" type
             print "NOTES:" notes
-            print "TEST_COMMAND:" testCommand
         }
     ' "$FEATURES_FILE"
 }
@@ -279,35 +294,38 @@ get_next_task() {
     echo "$incomplete_tasks" | head -1
 }
 
-# Function to get test command for a task (optional override only)
-get_test_command() {
-    local task_name="$1"
-    local test_cmd=""
-
-    # Extract testCommand using awk
-    test_cmd=$(awk -v name="$task_name" '
-        BEGIN { found=0; in_feature=0 }
-        /"name"[[:space:]]*:[[:space:]]*"/ {
-            if (index($0, "\"" name "\"") > 0) {
-                found=1
-                in_feature=1
-            }
-        }
-        found && in_feature && /"testCommand"[[:space:]]*:[[:space:]]*"/ {
-            gsub(/.*"testCommand"[[:space:]]*:[[:space:]]*"/, "")
-            gsub(/".*/, "")
-            print
-            exit
-        }
-        found && /}/ { in_feature=0 }
-    ' "$FEATURES_FILE" 2>/dev/null)
-
-    # Return empty if not specified - Claude will decide what tests to run
-    if [[ "$test_cmd" == "null" ]]; then
-        test_cmd=""
+# Function to auto-detect the test framework and return a command hint
+detect_test_hint() {
+    if [[ -f "pom.xml" ]] || [[ -f "mvnw" ]] || [[ -f "../pom.xml" ]]; then
+        local mvn_cmd="mvn"
+        [[ -f "./mvnw" ]] && mvn_cmd="./mvnw"
+        [[ -f "../mvnw" ]] && mvn_cmd="../mvnw"
+        echo "This is a Maven/Spring Boot project. To run a specific test class: $mvn_cmd test -Dtest=TestClassName"
+    elif [[ -f "build.gradle" ]] || [[ -f "build.gradle.kts" ]]; then
+        local gradle_cmd="gradle"
+        [[ -f "./gradlew" ]] && gradle_cmd="./gradlew"
+        echo "This is a Gradle project. To run a specific test class: $gradle_cmd test --tests ClassName"
+    elif [[ -f "angular.json" ]]; then
+        echo "This is an Angular project. To run a specific test: ng test --include=**/file.spec.ts --browsers=ChromeHeadless --watch=false"
+    elif [[ -f "package.json" ]]; then
+        if grep -q '"jest"' package.json 2>/dev/null || [[ -f "jest.config.js" ]] || [[ -f "jest.config.ts" ]]; then
+            echo "This is a Jest project. To run a specific test: npx jest path/to/file.test.ts"
+        elif grep -q '"vitest"' package.json 2>/dev/null || [[ -f "vitest.config.ts" ]]; then
+            echo "This is a Vitest project. To run a specific test: npx vitest run path/to/file.test.ts"
+        elif grep -q '"mocha"' package.json 2>/dev/null; then
+            echo "This is a Mocha project. To run a specific test: npx mocha path/to/file.test.js"
+        else
+            echo "Run ONLY the specific test file(s) related to your changes, NOT the entire test suite."
+        fi
+    elif [[ -f "pyproject.toml" ]] || [[ -f "pytest.ini" ]] || [[ -f "setup.cfg" ]]; then
+        echo "This is a Python project. To run a specific test: pytest path/to/test_file.py -v"
+    elif [[ -f "go.mod" ]]; then
+        echo "This is a Go project. To run a specific test: go test ./path/to/package -v"
+    elif [[ -f "Cargo.toml" ]]; then
+        echo "This is a Rust project. To run a specific test: cargo test test_name"
+    else
+        echo "Run ONLY the specific test file(s) related to your changes, NOT the entire test suite."
     fi
-
-    echo "$test_cmd"
 }
 
 # Function to build prompt for implementation tasks
@@ -324,9 +342,12 @@ Instructions:
 1. Implement the feature following the context above
 2. Follow existing code patterns in the codebase
 3. After implementation, update $PROGRESS_FILE: change [ ] to [x] for \"$task_name\"
-4. If you cannot complete the task after multiple attempts:
-   - Change [ ] to [SKIP] followed by a brief reason
-   - Example: [SKIP] $task_name - missing dependency X
+4. ONLY mark [SKIP] for genuine blockers you cannot fix:
+   - Missing dependency that cannot be installed
+   - Requires an external service/API that is unavailable
+   - Build or compile error unrelated to this task
+   - Do NOT skip because the task is difficult or you are unsure
+   - Format: [SKIP] $task_name - <specific blocker reason>
 5. Cleanup: Remove any debug code or temp files before marking complete"
 
     echo "$prompt"
@@ -337,7 +358,6 @@ build_verification_prompt() {
     local task_name="$1"
     local task_type="$2"
     local notes="$3"
-    local test_cmd="$4"
 
     local action_word
     if [[ "$task_type" == "bugfix" ]]; then
@@ -346,13 +366,11 @@ build_verification_prompt() {
         action_word="Write/fix the tests"
     fi
 
-    # Build test instruction based on whether testCommand is specified
-    local test_instruction
-    if [[ -n "$test_cmd" ]]; then
-        test_instruction="Run this specific test command: $test_cmd"
-    else
-        test_instruction="Run the unit tests for the file(s) you modified"
-    fi
+    local test_hint
+    test_hint=$(detect_test_hint)
+    local test_instruction="Run the unit tests for the file(s) you modified.
+   $test_hint
+   Do NOT run the entire test suite — only the specific test class/file for what you changed."
 
     local prompt="Your task: $task_name
 
@@ -367,9 +385,12 @@ Instructions:
    - If ANY test fails, fix the code and run tests again
    - Repeat until ALL tests pass
 4. ONLY when all tests pass with 0 failures, update $PROGRESS_FILE: change [ ] to [x] for \"$task_name\"
-5. If you cannot make tests pass after multiple attempts:
-   - Change [ ] to [SKIP] followed by a brief reason
-   - Example: [SKIP] $task_name - missing test fixtures
+5. ONLY mark [SKIP] for genuine blockers you cannot fix:
+   - Missing dependency that cannot be installed
+   - Requires an external service/API that is unavailable
+   - Build or compile error unrelated to this task
+   - Do NOT skip because tests are hard to fix or you are unsure
+   - Format: [SKIP] $task_name - <specific blocker reason>
 6. Cleanup: Remove any debug code or temp files before marking complete
 
 IMPORTANT:
@@ -397,7 +418,7 @@ run_iteration() {
     echo -e "${BLUE}[Task]${NC} $task_name" | tee -a "$LOG_FILE"
 
     # Get task details
-    local task_details priority task_type notes test_cmd
+    local task_details priority task_type notes
     task_details=$(get_task_details "$task_name")
 
     priority=$(echo "$task_details" | grep "^PRIORITY:" | cut -d: -f2-)
@@ -412,13 +433,7 @@ run_iteration() {
     # Build the appropriate prompt based on task type
     local prompt
     if [[ "$task_type" == "bugfix" ]] || [[ "$task_type" == "testing" ]]; then
-        test_cmd=$(get_test_command "$task_name")
-        if [[ -n "$test_cmd" ]]; then
-            echo -e "${BLUE}[Test Command]${NC} $test_cmd (from features.json)" | tee -a "$LOG_FILE"
-        else
-            echo -e "${BLUE}[Test Command]${NC} Claude will decide (no testCommand specified)" | tee -a "$LOG_FILE"
-        fi
-        prompt=$(build_verification_prompt "$task_name" "$task_type" "$notes" "$test_cmd")
+        prompt=$(build_verification_prompt "$task_name" "$task_type" "$notes")
     else
         prompt=$(build_implementation_prompt "$task_name" "$notes")
     fi
@@ -485,7 +500,8 @@ sync_progress_file() {
         # e.g., "Auth" shouldn't match "[ ] Auth Provider"
         if ! grep -qFx "[ ] $feature" "$PROGRESS_FILE" 2>/dev/null && \
            ! grep -qFx "[x] $feature" "$PROGRESS_FILE" 2>/dev/null && \
-           ! grep -q "^\[SKIP\] $feature" "$PROGRESS_FILE" 2>/dev/null; then
+           ! grep -q "^\[SKIP\] ${feature}$\|^\[SKIP\] ${feature} - " "$PROGRESS_FILE" 2>/dev/null && \
+           ! grep -q "^\[SKIP2\] ${feature}$\|^\[SKIP2\] ${feature} - " "$PROGRESS_FILE" 2>/dev/null; then
             echo "[ ] $feature" >> "$PROGRESS_FILE"
             echo -e "${GREEN}Added new feature: $feature${NC}"
             ((added++))
@@ -532,14 +548,39 @@ fi
 iteration=1
 consecutive_failures=0
 max_failures=3
+declare -a retried_tasks=()  # Track tasks that have been retried
+
+# Function to promote [SKIP] → [SKIP2] for tasks that were already retried
+promote_skips() {
+    local promoted=0
+    for retried in "${retried_tasks[@]}"; do
+        if grep -q "^\[SKIP\] ${retried}$\|^\[SKIP\] ${retried} - " "$PROGRESS_FILE" 2>/dev/null; then
+            local temp_prog
+            temp_prog=$(mktemp)
+            while IFS= read -r line; do
+                if [[ "$line" == "[SKIP] $retried" ]] || [[ "$line" == "[SKIP] $retried - "* ]]; then
+                    # Replace [SKIP] with [SKIP2] — keep the reason
+                    echo "${line/\[SKIP\]/[SKIP2]}"
+                    ((promoted++))
+                else
+                    echo "$line"
+                fi
+            done < "$PROGRESS_FILE" > "$temp_prog"
+            mv "$temp_prog" "$PROGRESS_FILE"
+        fi
+    done
+    if [[ $promoted -gt 0 ]]; then
+        echo -e "${YELLOW}[Skip]${NC} $promoted task(s) skipped again after retry — marked permanent" | tee -a "$LOG_FILE"
+    fi
+}
 
 while [[ $iteration -le $MAX_ITERATIONS ]]; do
     # Check if complete before running
     if [[ "$(check_completion)" == "true" ]]; then
-        echo -e "${GREEN}=== ALL TASKS COMPLETE ===${NC}"
-        echo "Finished at iteration $iteration"
-        echo "=== Completed: $(date) ===" >> "$LOG_FILE"
-        exit 0
+        if handle_completion; then
+            exit 0
+        fi
+        # Skipped tasks were re-queued, continue loop
     fi
 
     echo -e "${GREEN}Progress: $(get_progress)${NC}"
@@ -548,11 +589,15 @@ while [[ $iteration -le $MAX_ITERATIONS ]]; do
     run_result=0
     run_iteration $iteration || run_result=$?
 
+    # Promote any retried tasks that got skipped again to [SKIP2]
+    promote_skips
+
     if [[ $run_result -eq 2 ]]; then
-        # All tasks done (returned by run_iteration)
-        echo -e "${GREEN}=== ALL TASKS COMPLETE ===${NC}"
-        echo "=== Completed: $(date) ===" >> "$LOG_FILE"
-        exit 0
+        # All [ ] tasks done — check if skipped tasks need retry
+        if handle_completion; then
+            exit 0
+        fi
+        # Skipped tasks were re-queued, continue loop
     elif [[ $run_result -eq 0 ]]; then
         consecutive_failures=0
     else
