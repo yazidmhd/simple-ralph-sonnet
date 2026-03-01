@@ -297,7 +297,11 @@ get_next_task() {
 # Function to auto-detect the test framework and return a command hint
 detect_test_hint() {
     if [[ -f "pom.xml" ]] || [[ -f "mvnw" ]] || [[ -f "../pom.xml" ]]; then
+        # Use mvn.cmd on Windows/MINGW, mvn elsewhere
         local mvn_cmd="mvn"
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "mingw"* ]] || [[ -n "$MINGW_PREFIX" ]]; then
+            mvn_cmd="mvn.cmd"
+        fi
         [[ -f "./mvnw" ]] && mvn_cmd="./mvnw"
         [[ -f "../mvnw" ]] && mvn_cmd="../mvnw"
         echo "This is a Maven/Spring Boot project. To run a specific test class: $mvn_cmd test -Dtest=TestClassName"
